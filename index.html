@@ -165,9 +165,13 @@
     // ========================================
     // CONFIGURATION
     // ========================================
+    // Detect device capabilities
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+    const isLowEnd = isMobile || navigator.hardwareConcurrency <= 4;
+
     const CONFIG = {
-      // Particle system - point lights
-      particleCount: 2800,  // Moderate density
+      // Particle system - optimized for performance
+      particleCount: isLowEnd ? 1400 : 2800,  // Half particles on low-end devices
       treeHeight: 8.0,
       treeMaxRadius: 3.5,
 
@@ -193,15 +197,15 @@
         rotationMomentum: 0.96
       },
 
-      // Bloom - warm glow like reference image
+      // Bloom - optimized for performance
       bloom: {
-        strength: 0.35,
-        radius: 0.4,
-        threshold: 0.5
+        strength: isLowEnd ? 0.2 : 0.35,
+        radius: isLowEnd ? 0.3 : 0.4,
+        threshold: 0.6
       },
 
-      // Starfield background - more stars for cosmic feel
-      starCount: 1200,
+      // Starfield background - optimized
+      starCount: isLowEnd ? 600 : 1200,
 
       // Photo - large display
       photo: {
@@ -312,10 +316,13 @@
       );
       camera.position.set(0, 1.2, 12);
 
-      // Renderer
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      // Renderer - optimized pixel ratio
+      renderer = new THREE.WebGLRenderer({ 
+        antialias: !isLowEnd,
+        powerPreference: 'high-performance'
+      });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(isLowEnd ? 1 : Math.min(window.devicePixelRatio, 1.5));
       document.body.appendChild(renderer.domElement);
 
       // Post-processing
@@ -498,11 +505,11 @@
 
       // Point material with cosmic star appearance
       const material = new THREE.PointsMaterial({
-        size: 0.18,
+        size: isLowEnd ? 0.25 : 0.18,  // Larger particles on low-end for visibility
         sizeAttenuation: true,
         vertexColors: true,
         transparent: true,
-        opacity: 0.9,
+        opacity: isLowEnd ? 1.0 : 0.9,
         blending: THREE.AdditiveBlending,
         depthWrite: false
       });
@@ -1190,7 +1197,7 @@
     }
 
     let lastProcessTime = 0;
-    const PROCESS_INTERVAL = 33; // ~30fps
+    const PROCESS_INTERVAL = isLowEnd ? 66 : 33; // 15fps on low-end, 30fps on high-end
 
     function processHandFrame() {
       if (!handLandmarker || !videoElement) return;
@@ -1426,6 +1433,7 @@
     // ========================================
     function updateDepthAndTwinkling(time) {
       if (currentState !== AppState.CLOUD && currentState !== AppState.PHOTO) return;
+      if (isLowEnd) return; // Skip on low-end devices for performance
 
       const positions = particles.geometry.attributes.position.array;
       const colors = particles.geometry.attributes.color.array;
