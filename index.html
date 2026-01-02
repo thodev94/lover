@@ -29,6 +29,29 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
 
+    /* Hide webcam on mobile */
+    @media (max-width: 768px) {
+      #webcam-preview {
+        display: none !important;
+      }
+    }
+
+    /* Mobile optimizations */
+    @media (max-width: 768px) {
+      #instructions {
+        font-size: 10px;
+        max-width: 200px;
+        bottom: 10px;
+        left: 10px;
+      }
+      
+      #gesture-indicator {
+        font-size: 12px;
+        padding: 6px 12px;
+        top: 10px;
+      }
+    }
+
     /* Loading overlay */
     #loading-overlay {
       position: fixed;
@@ -142,9 +165,13 @@
     // ========================================
     // CONFIGURATION
     // ========================================
+        // Detect device capabilities
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+        const isLowEnd = isMobile || navigator.hardwareConcurrency <= 4;
+
     const CONFIG = {
-      // Particle system - point lights
-      particleCount: 2800,  // Moderate density
+      // Particle system - heavily optimized for performance
+      particleCount: isLowEnd ? 1200 : 2800,  // Much fewer particles on low-end devices
       treeHeight: 8.0,
       treeMaxRadius: 3.5,
 
@@ -157,28 +184,28 @@
       },
       colorDistribution: { gold: 0.45, red: 0.25, white: 0.15, cosmic: 0.15 },
 
-      // Physics
+      // Physics - simplified on low-end
       physics: {
-        explosionForce: 0.28,      // Good spread for large cloud
-        springStiffness: 0.045,
-        damping: 0.965,
-        ambientDrift: 0.0002,
+        explosionForce: 0.28,
+        springStiffness: isLowEnd ? 0.06 : 0.045,  // Faster convergence
+        damping: isLowEnd ? 0.95 : 0.965,  // Faster settling
+        ambientDrift: isLowEnd ? 0 : 0.0002,  // Disable drift on low-end
         cloudWeakSpring: 0.0,
-        cloudRadius: 8.0,          // Large volumetric sphere
+        cloudRadius: 8.0,
         rotationSensitivity: 1.0,
         rotationThreshold: 0.01,
         rotationMomentum: 0.96
       },
 
-      // Bloom - warm glow like reference image
+      // Bloom - optimized for performance
       bloom: {
-        strength: 0.35,
-        radius: 0.4,
-        threshold: 0.5
+        strength: isLowEnd ? 0.2 : 0.35,
+        radius: isLowEnd ? 0.3 : 0.4,
+        threshold: 0.6
       },
 
-      // Starfield background - more stars for cosmic feel
-      starCount: 1200,
+      // Starfield background - optimized
+      starCount: isLowEnd ? 600 : 1200,
 
       // Photo - large display
       photo: {
@@ -188,6 +215,23 @@
         scaleInDuration: 500,
         scaleOutDuration: 300,
         scatterRadius: 4.0
+      },
+
+      // Mobile photo size (smaller for mobile screens)
+      getMobilePhotoSize() {
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile) {
+          return {
+            width: 4.5,
+            height: 3.4,
+            frameThickness: 0.15
+          };
+        }
+        return {
+          width: this.photo.width,
+          height: this.photo.height,
+          frameThickness: this.photo.frameThickness
+        };
       }
     };
 
@@ -208,6 +252,142 @@
 
     // Particle data arrays (for 3D mesh particles)
     const particleData = [];
+    
+    // Image sprites floating among particles
+    const floatingImageSprites = [];
+    const floatingImageData = [];
+    
+    // Create rounded rectangle texture mask
+    function createRoundedMask() {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      
+      const radius = size * 0.15;  // 15% corner radius
+      
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, radius);
+      ctx.fill();
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      return texture;
+    }
+
+    // Create circular gradient texture for particles (glowing orb effect)
+    function createParticleTexture(sharp = false) {
+      const size = 128;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      
+      const center = size / 2;
+      const imageData = ctx.createImageData(size, size);
+      const data = imageData.data;
+      
+      // Offset highlight to create 3D sphere effect
+      const highlightOffsetX = size * 0.15;  // Highlight offset from center
+      const highlightOffsetY = size * 0.15;
+      
+      if (sharp) {
+        // Bright glowing orb for mobile with offset highlight
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            const dx = x - center;
+            const dy = y - center;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const normalizedDistance = distance / center;
+            
+            // Distance from highlight point
+            const highlightX = center + highlightOffsetX;
+            const highlightY = center + highlightOffsetY;
+            const hdx = x - highlightX;
+            const hdy = y - highlightY;
+            const highlightDist = Math.sqrt(hdx * hdx + hdy * hdy);
+            const normalizedHighlightDist = highlightDist / (center * 0.6);
+            
+            let brightness = 0;
+            let alpha = 0;
+            
+            if (normalizedDistance < 1) {
+              // Base brightness from center
+              let baseBrightness = 1.0 - (normalizedDistance * 0.5);
+              
+              // Add highlight
+              let highlightBrightness = 0;
+              if (normalizedHighlightDist < 1) {
+                highlightBrightness = (1 - normalizedHighlightDist) * 0.8;
+              }
+              
+              brightness = Math.min(1.0, baseBrightness + highlightBrightness);
+              
+              // Alpha fade at edges
+              if (normalizedDistance < 0.8) {
+                alpha = 1.0;
+              } else {
+                alpha = (1 - normalizedDistance) / 0.2;
+              }
+            }
+            
+            const idx = (y * size + x) * 4;
+            data[idx] = 255 * brightness;
+            data[idx + 1] = 255 * brightness;
+            data[idx + 2] = 255 * brightness;
+            data[idx + 3] = alpha * 255;
+          }
+        }
+      } else {
+        // Soft glow for desktop with highlight
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            const dx = x - center;
+            const dy = y - center;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const normalizedDistance = distance / center;
+            
+            // Distance from highlight point
+            const highlightX = center + highlightOffsetX;
+            const highlightY = center + highlightOffsetY;
+            const hdx = x - highlightX;
+            const hdy = y - highlightY;
+            const highlightDist = Math.sqrt(hdx * hdx + hdy * hdy);
+            const normalizedHighlightDist = highlightDist / (center * 0.5);
+            
+            let brightness = 0;
+            let alpha = 0;
+            
+            if (normalizedDistance < 1) {
+              // Base brightness
+              let baseBrightness = 1.0 - (normalizedDistance * 0.6);
+              
+              // Highlight
+              let highlightBrightness = 0;
+              if (normalizedHighlightDist < 1) {
+                highlightBrightness = Math.pow(1 - normalizedHighlightDist, 2) * 0.6;
+              }
+              
+              brightness = Math.min(1.0, baseBrightness + highlightBrightness);
+              alpha = Math.pow(1 - normalizedDistance, 1.5);
+            }
+            
+            const idx = (y * size + x) * 4;
+            data[idx] = 255 * brightness;
+            data[idx + 1] = 255 * brightness;
+            data[idx + 2] = 255 * brightness;
+            data[idx + 3] = alpha * 255;
+          }
+        }
+      }
+      
+      ctx.putImageData(imageData, 0, 0);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
+    }
 
     // Image sprites data
     const imageSprites = [];
@@ -218,11 +398,16 @@
     let videoElement = null;
     let wasPinching = false;
     let handTrackingEnabled = false;
+        let lastPhotoTriggerTime = 0;
+        const PHOTO_TRIGGER_COOLDOWN = 1000; // 1 second cooldown between photo triggers
     let previousPinchAngle = null;  // For photo rotation
     let photoRotationZ = 0;         // Current photo Z rotation
 
     // Mouse/Touch
     let mousePosition = { x: 0, y: 0 };
+
+    // Lighting direction for particle shine (changes with rotation)
+    let lightDirection = new THREE.Vector3(1, 1, 0.5).normalize();
 
     // Sample photos (will use placeholder if no photos exist)
     const PHOTOS = [
@@ -270,41 +455,48 @@
       );
       camera.position.set(0, 1.2, 12);
 
-      // Renderer
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      // Renderer - optimized pixel ratio
+      renderer = new THREE.WebGLRenderer({
+        antialias: !isLowEnd,
+        powerPreference: 'high-performance'
+      });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(isLowEnd ? 1 : Math.min(window.devicePixelRatio, 1.5));
       document.body.appendChild(renderer.domElement);
 
-      // Post-processing
+      // Post-processing - minimal on low-end
       composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
 
-      const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        CONFIG.bloom.strength,
-        CONFIG.bloom.radius,
-        CONFIG.bloom.threshold
-      );
-      composer.addPass(bloomPass);
+      if (!isLowEnd) {
+      // Only add bloom on high-end devices
+        const bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(window.innerWidth, window.innerHeight),
+          CONFIG.bloom.strength,
+          CONFIG.bloom.radius,
+          CONFIG.bloom.threshold
+        );
+        composer.addPass(bloomPass);
+      }
       composer.addPass(new OutputPass());
 
-      // Lighting for 3D particles
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      // Lighting - simplified on low-end
+      const ambientLight = new THREE.AmbientLight(0xffffff, isLowEnd ? 0.8 : 0.6);
       scene.add(ambientLight);
 
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-      directionalLight.position.set(5, 10, 7);
-      scene.add(directionalLight);
+      if (!isLowEnd) {
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7);
+        scene.add(directionalLight);
 
-      const backLight = new THREE.DirectionalLight(0xffd700, 0.3);
-      backLight.position.set(-5, -5, -5);
-      scene.add(backLight);
+        const backLight = new THREE.DirectionalLight(0xffd700, 0.3);
+        backLight.position.set(-5, -5, -5);
+        scene.add(backLight);
 
-      // Point light for warm glow
-      const pointLight = new THREE.PointLight(0xffa500, 0.5, 15);
-      pointLight.position.set(0, 0, 3);
-      scene.add(pointLight);
+        const pointLight = new THREE.PointLight(0xffa500, 0.5, 15);
+        pointLight.position.set(0, 0, 3);
+        scene.add(pointLight);
+      }
 
       // Resize handler
       window.addEventListener('resize', onWindowResize);
@@ -454,15 +646,20 @@
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-      // Point material with cosmic star appearance
+      // Create glowing particle texture for all devices
+      const particleTexture = createParticleTexture(isLowEnd);
+
+      // Point material - bright glowing particles with shine
       const material = new THREE.PointsMaterial({
-        size: 0.18,
+        size: isLowEnd ? 0.35 : 0.22,  // Good visibility
         sizeAttenuation: true,
         vertexColors: true,
         transparent: true,
-        opacity: 0.9,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,  // Glowing effect on all devices
+        depthWrite: false,
+        map: particleTexture,  // Glowing orb texture
+        alphaTest: 0.01
       });
 
       particles = new THREE.Points(geometry, material);
@@ -472,6 +669,90 @@
       createTreeStar();
 
       scene.add(particleGroup);
+    }
+
+    // Create floating image sprites among particles
+    function createFloatingImages() {
+      if (MEDIA_IMAGES.length === 0) return;
+      
+      const spriteCount = isLowEnd ? 15 : 30;  // Fewer on mobile
+      const spriteSize = isLowEnd ? 0.8 : 0.6;
+      const roundedMask = createRoundedMask();
+      const minDistance = spriteSize * 1.5;  // Minimum distance between sprites to avoid overlap
+      const positions = [];  // Store all positions to check for overlaps
+      
+      for (let i = 0; i < spriteCount; i++) {
+        let x, y, z;
+        let attempts = 0;
+        let validPosition = false;
+        
+        // Try to find a non-overlapping position
+        while (!validPosition && attempts < 50) {
+          // Random position on sphere surface
+          const theta = Math.random() * Math.PI * 2;  // Azimuthal angle (0 to 2π)
+          const phi = Math.acos(2 * Math.random() - 1);  // Polar angle (uniform distribution)
+          
+          const sphereRadius = 4.5;  // Sphere radius
+          x = sphereRadius * Math.sin(phi) * Math.cos(theta);
+          y = sphereRadius * Math.sin(phi) * Math.sin(theta);
+          z = sphereRadius * Math.cos(phi);
+          
+          // Check distance to all existing positions
+          validPosition = true;
+          for (let j = 0; j < positions.length; j++) {
+            const existingPos = positions[j];
+            const dx = x - existingPos.x;
+            const dy = y - existingPos.y;
+            const dz = z - existingPos.z;
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            
+            if (distance < minDistance) {
+              validPosition = false;
+              break;
+            }
+          }
+          
+          attempts++;
+        }
+        
+        // If couldn't find valid position after 50 attempts, skip this sprite
+        if (!validPosition) continue;
+        
+        // Store this position
+        positions.push({ x, y, z });
+        
+        // Random image from media
+        const randomImage = MEDIA_IMAGES[Math.floor(Math.random() * MEDIA_IMAGES.length)];
+        
+        // Load texture
+        const textureLoader = new THREE.TextureLoader();
+        const texture = textureLoader.load(randomImage);
+        
+        // Create sprite material with rounded corners using alphaMap
+        const material = new THREE.SpriteMaterial({
+          map: texture,
+          alphaMap: roundedMask,  // Rounded corners mask
+          transparent: true,
+          opacity: 1.0,  // Full opacity
+          blending: THREE.NormalBlending
+        });
+        
+        const sprite = new THREE.Sprite(material);
+        sprite.position.set(x, y, z);
+        sprite.scale.set(spriteSize, spriteSize, 1);
+        sprite.visible = false;  // Hidden initially, only show when rotating
+        
+        particleGroup.add(sprite);
+        floatingImageSprites.push(sprite);
+        
+        // Store data for gentle animation
+        floatingImageData.push({
+          homePosition: new THREE.Vector3(x, y, z),
+          rotationSpeed: (Math.random() - 0.5) * 0.002,
+          floatPhase: Math.random() * Math.PI * 2,
+          floatSpeed: 0.3 + Math.random() * 0.3
+        });
+      }
     }
 
     // ========================================
@@ -578,10 +859,13 @@
     function createPhotoFrame() {
       photoFrame = new THREE.Group();
 
+      // Get responsive photo size
+      const photoSize = CONFIG.getMobilePhotoSize();
+
       // Photo plane
       const photoGeometry = new THREE.PlaneGeometry(
-        CONFIG.photo.width,
-        CONFIG.photo.height
+        photoSize.width,
+        photoSize.height
       );
       const photoMaterial = new THREE.MeshBasicMaterial({
         color: 0xffffff,
@@ -592,8 +876,8 @@
       photoFrame.add(photoMesh);
 
       // Golden frame (from video: polished gold, ~25-35px border)
-      const frameWidth = CONFIG.photo.width + CONFIG.photo.frameThickness * 2;
-      const frameHeight = CONFIG.photo.height + CONFIG.photo.frameThickness * 2;
+      const frameWidth = photoSize.width + photoSize.frameThickness * 2;
+      const frameHeight = photoSize.height + photoSize.frameThickness * 2;
 
       const frameMaterial = new THREE.MeshStandardMaterial({
         color: 0xD4AF37,
@@ -608,34 +892,34 @@
 
       // Top border
       const topBorder = new THREE.Mesh(
-        borderGeo(frameWidth, CONFIG.photo.frameThickness, 0.08),
+        borderGeo(frameWidth, photoSize.frameThickness, 0.08),
         frameMaterial
       );
-      topBorder.position.y = CONFIG.photo.height / 2 + CONFIG.photo.frameThickness / 2;
+      topBorder.position.y = photoSize.height / 2 + photoSize.frameThickness / 2;
       photoFrame.add(topBorder);
 
       // Bottom border
       const bottomBorder = new THREE.Mesh(
-        borderGeo(frameWidth, CONFIG.photo.frameThickness, 0.08),
+        borderGeo(frameWidth, photoSize.frameThickness, 0.08),
         frameMaterial
       );
-      bottomBorder.position.y = -CONFIG.photo.height / 2 - CONFIG.photo.frameThickness / 2;
+      bottomBorder.position.y = -photoSize.height / 2 - photoSize.frameThickness / 2;
       photoFrame.add(bottomBorder);
 
       // Left border
       const leftBorder = new THREE.Mesh(
-        borderGeo(CONFIG.photo.frameThickness, CONFIG.photo.height, 0.08),
+        borderGeo(photoSize.frameThickness, photoSize.height, 0.08),
         frameMaterial
       );
-      leftBorder.position.x = -CONFIG.photo.width / 2 - CONFIG.photo.frameThickness / 2;
+      leftBorder.position.x = -photoSize.width / 2 - photoSize.frameThickness / 2;
       photoFrame.add(leftBorder);
 
       // Right border
       const rightBorder = new THREE.Mesh(
-        borderGeo(CONFIG.photo.frameThickness, CONFIG.photo.height, 0.08),
+        borderGeo(photoSize.frameThickness, photoSize.height, 0.08),
         frameMaterial
       );
-      rightBorder.position.x = CONFIG.photo.width / 2 + CONFIG.photo.frameThickness / 2;
+      rightBorder.position.x = photoSize.width / 2 + photoSize.frameThickness / 2;
       photoFrame.add(rightBorder);
 
       // Initial state
@@ -759,7 +1043,11 @@
     function updateParticlePhysics() {
       const positions = particles.geometry.attributes.position.array;
 
-      for (let i = 0; i < particleData.length; i++) {
+      // On low-end devices, only update subset of particles each frame
+      const step = isLowEnd ? 3 : 1;
+      const frameOffset = isLowEnd ? (performance.now() % 3) : 0;
+
+      for (let i = frameOffset; i < particleData.length; i += step) {
         const i3 = i * 3;
         const p = particleData[i];
         const home = p.homePosition;
@@ -913,16 +1201,93 @@
     // ========================================
     // PHOTO POPUP
     // ========================================
-    function showPhotoAtPosition(x, y, z) {
+    
+    // Find images near screen center (vertical preference from top to bottom)
+    function getClosestImageToCamera(handX = null, handY = null) {
+      if (floatingImageSprites.length === 0) return null;
+      
+      const centerX = 0.5;
+      const centerY = 0.5;
+      const centerTolerance = 0.25;  // 25% tolerance from center
+      const centerSprites = [];
+      
+      for (let i = 0; i < floatingImageSprites.length; i++) {
+        const sprite = floatingImageSprites[i];
+        if (!sprite.visible) continue;
+        
+        // Get sprite position in world space
+        const spriteWorldPos = new THREE.Vector3();
+        sprite.getWorldPosition(spriteWorldPos);
+        
+        // Calculate distance from camera
+        const distanceFromCamera = spriteWorldPos.distanceTo(camera.position);
+        
+        // Project sprite to screen space
+        const spriteScreenPos = spriteWorldPos.clone().project(camera);
+        
+        // Check if sprite is in front of camera
+        if (spriteScreenPos.z > 1) continue;
+        
+        // Convert from NDC (-1 to 1) to screen coordinates (0 to 1)
+        const screenX = (spriteScreenPos.x + 1) / 2;
+        const screenY = (1 - spriteScreenPos.y) / 2;
+        
+        // Calculate distance from screen center
+        const distX = Math.abs(screenX - centerX);
+        const distY = Math.abs(screenY - centerY);
+        
+        // Check if sprite is near center (within tolerance box)
+        if (distX < centerTolerance && distY < centerTolerance) {
+          centerSprites.push({
+            sprite: sprite,
+            screenX: screenX,
+            screenY: screenY,
+            distFromCenter: Math.sqrt(distX * distX + distY * distY),
+            distanceFromCamera: distanceFromCamera
+          });
+        }
+      }
+      
+      if (centerSprites.length === 0) return null;
+      
+      // Sort by distance from camera (closest first), then by Y position, then by center distance
+      centerSprites.sort((a, b) => {
+        const distDiff = a.distanceFromCamera - b.distanceFromCamera;
+        if (Math.abs(distDiff) > 0.5) return distDiff;  // Different distance from camera
+        
+        const yDiff = a.screenY - b.screenY;
+        if (Math.abs(yDiff) > 0.1) return yDiff;  // Different vertical positions
+        
+        return a.distFromCenter - b.distFromCenter;  // Same vertical area, prefer closer to center
+      });
+      
+      // Return first sprite (closest to camera, topmost, and closest to center)
+      // Or randomly pick from top 3 for variety
+      const pickCount = Math.min(3, centerSprites.length);
+      const randomIndex = Math.floor(Math.random() * pickCount);
+      return centerSprites[randomIndex].sprite;
+    }
+    
+    function showPhotoAtPosition(x, y, z, handX = null, handY = null) {
       if (isPhotoVisible) return;
 
       currentState = AppState.PHOTO;
       isPhotoVisible = true;
 
-      // Pick random media image (fallback to PHOTOS if no media)
-      const imageList = MEDIA_IMAGES.length > 0 ? MEDIA_IMAGES : PHOTOS;
-      const photoUrl = imageList[Math.floor(Math.random() * imageList.length)];
-      console.log('Loading photo:', photoUrl);
+      // Find closest visible image sprite to camera and hand position
+      const closestSprite = getClosestImageToCamera(handX, handY);
+      let photoUrl = null;
+      
+      if (closestSprite && closestSprite.material.map) {
+        // Use the image from the closest sprite
+        photoUrl = closestSprite.material.map.image.src;
+        console.log('Loading photo from closest sprite:', photoUrl);
+      } else {
+        // Fallback: pick random media image
+        const imageList = MEDIA_IMAGES.length > 0 ? MEDIA_IMAGES : PHOTOS;
+        photoUrl = imageList[Math.floor(Math.random() * imageList.length)];
+        console.log('Loading random photo (no sprite found):', photoUrl);
+      }
 
       // Load texture with error handling
       if (loadedTextures.has(photoUrl)) {
@@ -946,7 +1311,8 @@
 
       // Apply object-fit: cover effect
       function applyTextureCover(texture) {
-        const frameAspect = CONFIG.photo.width / CONFIG.photo.height;
+        const photoSize = CONFIG.getMobilePhotoSize();
+        const frameAspect = photoSize.width / photoSize.height;
         const imageAspect = texture.image.width / texture.image.height;
 
         if (imageAspect > frameAspect) {
@@ -1088,7 +1454,8 @@
         Math.pow(thumb.x - index.x, 2) +
         Math.pow(thumb.y - index.y, 2)
       );
-      return distance < 0.06;
+      // Increased threshold for more deliberate pinch (was 0.06)
+      return distance < 0.05;
     }
 
     // Get wrist rotation angle for photo rotation
@@ -1143,7 +1510,7 @@
     }
 
     let lastProcessTime = 0;
-    const PROCESS_INTERVAL = 33; // ~30fps
+        const PROCESS_INTERVAL = isLowEnd ? 66 : 33; // 15fps on low-end, 30fps on high-end
 
     function processHandFrame() {
       if (!handLandmarker || !videoElement) return;
@@ -1178,8 +1545,17 @@
 
         // Pinch for photo
         if (currentState === AppState.CLOUD && pinching && !wasPinching) {
-          showPhotoAtPosition(0, 0, 0);
-          previousPinchAngle = null; // Reset angle tracking
+          const now = performance.now();
+          // Only trigger if cooldown has passed
+          if (now - lastPhotoTriggerTime > PHOTO_TRIGGER_COOLDOWN) {
+            console.log('Pinch detected - showing photo from center');
+            // No need to pass hand position, just find center image
+            showPhotoAtPosition(0, 0, 0);
+            lastPhotoTriggerTime = now;
+            previousPinchAngle = null; // Reset angle tracking
+          } else {
+            console.log('Pinch detected but in cooldown');
+          }
         }
 
         // Photo rotation while pinching
@@ -1371,6 +1747,7 @@
     // ========================================
     function updateDepthAndTwinkling(time) {
       if (currentState !== AppState.CLOUD && currentState !== AppState.PHOTO) return;
+      if (isLowEnd) return; // Skip on low-end devices for performance
 
       const positions = particles.geometry.attributes.position.array;
       const colors = particles.geometry.attributes.color.array;
@@ -1436,6 +1813,34 @@
         sd.sprite.scale.setScalar(scale);
       }
     }
+    
+    // Update floating image sprites animation
+    function updateFloatingImages(time) {
+      // Only show images when in cloud/rotation state
+      const shouldShow = currentState === AppState.CLOUD;
+      
+      for (let i = 0; i < floatingImageSprites.length; i++) {
+        const sprite = floatingImageSprites[i];
+        const data = floatingImageData[i];
+        
+        // Show/hide based on state
+        sprite.visible = shouldShow;
+        
+        if (shouldShow) {
+          // Gentle floating motion
+          const floatOffset = Math.sin(time * data.floatSpeed + data.floatPhase) * 0.1;
+          sprite.position.y = data.homePosition.y + floatOffset;
+          
+          // Slow rotation
+          sprite.material.rotation += data.rotationSpeed;
+          
+          // Gentle scale pulsing
+          const scale = 1.0 + Math.sin(time * 0.5 + data.floatPhase) * 0.05;
+          const baseSize = isLowEnd ? 0.8 : 0.6;
+          sprite.scale.set(baseSize * scale, baseSize * scale, 1);
+        }
+      }
+    }
 
     // ========================================
     // ANIMATION LOOP
@@ -1457,6 +1862,9 @@
 
       // Update 3D depth effect + twinkling
       updateDepthAndTwinkling(time);
+      
+      // Update floating images
+      updateFloatingImages(time);
 
       // Update cloud rotation with momentum
       updateCloudRotation();
@@ -1484,6 +1892,7 @@
       setupScene();
       createStarfield();
       createParticleSystem();
+      createFloatingImages();  // Add floating image sprites
       createImageSprites();
       createPhotoFrame();
       preloadPhotos();
