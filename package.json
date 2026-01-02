@@ -9,8 +9,9 @@
     "test": "npx playwright test",
     "test:ui": "npx playwright test --ui",
     "serve": "npx serve .",
-    "build": "powershell -Command \"if (Test-Path build) { Remove-Item -Recurse -Force build }; New-Item -ItemType Directory -Path build | Out-Null; Copy-Item index.html build/; if (Test-Path media) { Copy-Item -Recurse media build/ }\" && node scripts/generate-manifest.js",
-    "deploy": "npm run build && npx gh-pages -d build"
+    "prebuild": "if exist build rd /s /q build && mkdir build && copy index.html build\\ && if exist README.md copy README.md build\\ && if exist media xcopy /E /I media build\\media && if exist scripts xcopy /E /I scripts build\\scripts && echo node_modules> build\\.gitignore && echo. > build\\.nojekyll",
+    "build": "node scripts/generate-manifest.js",
+    "deploy": "npm run prebuild && npm run build && npx gh-pages -d build --dotfiles"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
