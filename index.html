@@ -266,7 +266,7 @@
       const data = imageData.data;
       
       if (sharp) {
-        // Sharp solid circle for mobile - no blur
+        // Bright glowing orb for mobile with shine effect
         for (let y = 0; y < size; y++) {
           for (let x = 0; x < size; x++) {
             const dx = x - center;
@@ -274,19 +274,32 @@
             const distance = Math.sqrt(dx * dx + dy * dy);
             const normalizedDistance = distance / center;
             
-            // Very sharp edge - 80% solid core, 20% quick fade
+            let brightness = 0;
             let alpha = 0;
-            if (normalizedDistance < 0.8) {
-              alpha = 1.0;  // Solid core
-            } else if (normalizedDistance < 1) {
-              // Very quick edge smoothing
-              alpha = (1 - normalizedDistance) / 0.2;
+            
+            if (normalizedDistance < 1) {
+              // Bright center with gradient
+              if (normalizedDistance < 0.3) {
+                // Super bright core
+                brightness = 1.0;
+                alpha = 1.0;
+              } else if (normalizedDistance < 0.7) {
+                // Bright mid section
+                const t = (normalizedDistance - 0.3) / 0.4;
+                brightness = 1.0 - (t * 0.3);  // 1.0 to 0.7
+                alpha = 1.0;
+              } else {
+                // Fade edge
+                const t = (normalizedDistance - 0.7) / 0.3;
+                brightness = 0.7 - (t * 0.5);  // 0.7 to 0.2
+                alpha = 1.0 - (t * 0.7);  // Fade alpha
+              }
             }
             
             const idx = (y * size + x) * 4;
-            data[idx] = 255;
-            data[idx + 1] = 255;
-            data[idx + 2] = 255;
+            data[idx] = 255 * brightness;
+            data[idx + 1] = 255 * brightness;
+            data[idx + 2] = 255 * brightness;
             data[idx + 3] = alpha * 255;
           }
         }
@@ -577,20 +590,20 @@
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-      // Create particle texture only for desktop
-      const particleTexture = !isLowEnd ? createParticleTexture(false) : null;
+      // Create glowing particle texture for all devices
+      const particleTexture = createParticleTexture(isLowEnd);
 
-      // Point material - solid squares on mobile for maximum clarity, glowing circles on desktop
+      // Point material - bright glowing particles with shine
       const material = new THREE.PointsMaterial({
-        size: isLowEnd ? 0.25 : 0.22,  // Clear visibility
+        size: isLowEnd ? 0.35 : 0.22,  // Good visibility
         sizeAttenuation: true,
         vertexColors: true,
-        transparent: false,  // No transparency for sharpness
+        transparent: true,
         opacity: 1.0,
-        blending: THREE.NormalBlending,  // No additive blending on mobile
+        blending: THREE.AdditiveBlending,  // Glowing effect on all devices
         depthWrite: false,
-        map: particleTexture,  // No texture on mobile = solid squares
-        alphaTest: isLowEnd ? 0 : 0.01
+        map: particleTexture,  // Glowing orb texture
+        alphaTest: 0.01
       });
 
       particles = new THREE.Points(geometry, material);
