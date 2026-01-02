@@ -253,6 +253,33 @@
     // Particle data arrays (for 3D mesh particles)
     const particleData = [];
 
+    // Create circular gradient texture for particles (glowing orb effect)
+    function createParticleTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      
+      const centerX = 32;
+      const centerY = 32;
+      const radius = 32;
+      
+      // Create radial gradient for glow effect
+      const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+      gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.9)');
+      gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.6)');
+      gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.2)');
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 64, 64);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
+    }
+
     // Image sprites data
     const imageSprites = [];
     const imageSpriteData = [];
@@ -507,15 +534,20 @@
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-      // Point material - optimized for visibility
+      // Create glowing particle texture for low-end devices
+      const particleTexture = isLowEnd ? createParticleTexture() : null;
+
+      // Point material - optimized with glowing orb effect on low-end
       const material = new THREE.PointsMaterial({
-        size: isLowEnd ? 0.28 : 0.18,  // Slightly larger on mobile
+        size: isLowEnd ? 0.35 : 0.18,  // Larger on mobile for visibility
         sizeAttenuation: true,
         vertexColors: true,
-        transparent: true,  // Enable transparency for glow effect
-        opacity: isLowEnd ? 0.95 : 0.9,  // Higher opacity on mobile
-        blending: THREE.AdditiveBlending,  // Beautiful glow on all devices
-        depthWrite: false
+        transparent: true,
+        opacity: isLowEnd ? 1.0 : 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        map: particleTexture,  // Circular gradient for glow effect on mobile
+        alphaTest: 0.01  // Clip very transparent pixels for performance
       });
 
       particles = new THREE.Points(geometry, material);
