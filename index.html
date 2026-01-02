@@ -265,7 +265,7 @@
       const imageData = ctx.createImageData(size, size);
       const data = imageData.data;
       
-      // Draw perfect circle with smooth gradient pixel by pixel
+      // Draw sharper circle with less blur
       for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
           const dx = x - center;
@@ -273,10 +273,15 @@
           const distance = Math.sqrt(dx * dx + dy * dy);
           const normalizedDistance = distance / center;
           
-          // Smooth falloff for glowing effect
+          // Sharper falloff - larger solid core with quick edge fade
           let alpha = 0;
-          if (normalizedDistance < 1) {
-            alpha = Math.pow(1 - normalizedDistance, 2.5);  // Power curve for smooth glow
+          if (normalizedDistance < 0.5) {
+            // Solid core (50% of radius)
+            alpha = 1.0;
+          } else if (normalizedDistance < 1) {
+            // Quick fade at edge
+            const edgeFade = (1 - normalizedDistance) / 0.5;
+            alpha = Math.pow(edgeFade, 1.5);  // Less aggressive fade
           }
           
           const idx = (y * size + x) * 4;
@@ -553,7 +558,7 @@
 
       // Point material - optimized with glowing orb effect
       const material = new THREE.PointsMaterial({
-        size: isLowEnd ? 0.35 : 0.18,  // Larger on mobile for visibility
+        size: isLowEnd ? 0.4 : 0.22,  // Larger for clearer visibility
         sizeAttenuation: true,
         vertexColors: true,
         transparent: true,
@@ -567,72 +572,10 @@
       particles = new THREE.Points(geometry, material);
       particleGroup.add(particles);
 
-      // Create connection lines between nearby particles
-      createParticleConnections(positions, colors, count);
-
       // Add star on top
       createTreeStar();
 
       scene.add(particleGroup);
-    }
-
-    // Create lines connecting nearby particles (constellation effect)
-    function createParticleConnections(positions, colors, count) {
-      const maxDistance = isLowEnd ? 1.2 : 1.5;  // Connection distance threshold
-      const maxConnections = isLowEnd ? 3 : 4;   // Max connections per particle
-      const linePositions = [];
-      const lineColors = [];
-      
-      for (let i = 0; i < count; i++) {
-        const i3 = i * 3;
-        const x1 = positions[i3];
-        const y1 = positions[i3 + 1];
-        const z1 = positions[i3 + 2];
-        
-        let connections = 0;
-        
-        // Find nearby particles to connect
-        for (let j = i + 1; j < count && connections < maxConnections; j++) {
-          const j3 = j * 3;
-          const x2 = positions[j3];
-          const y2 = positions[j3 + 1];
-          const z2 = positions[j3 + 2];
-          
-          const dx = x2 - x1;
-          const dy = y2 - y1;
-          const dz = z2 - z1;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          
-          if (distance < maxDistance) {
-            // Add line
-            linePositions.push(x1, y1, z1, x2, y2, z2);
-            
-            // Average color of two connected particles
-            const avgR = (colors[i3] + colors[j3]) * 0.5;
-            const avgG = (colors[i3 + 1] + colors[j3 + 1]) * 0.5;
-            const avgB = (colors[i3 + 2] + colors[j3 + 2]) * 0.5;
-            
-            lineColors.push(avgR, avgG, avgB, avgR, avgG, avgB);
-            connections++;
-          }
-        }
-      }
-      
-      if (linePositions.length > 0) {
-        const lineGeometry = new THREE.BufferGeometry();
-        lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(linePositions), 3));
-        lineGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(lineColors), 3));
-        
-        const lineMaterial = new THREE.LineBasicMaterial({
-          vertexColors: true,
-          transparent: true,
-          opacity: isLowEnd ? 0.15 : 0.2,
-          blending: THREE.AdditiveBlending
-        });
-        
-        const lineSegments = new THREE.LineSegments(lineGeometry, lineMaterial);
-        particleGroup.add(lineSegments);
-      }
     }
 
     // ========================================
