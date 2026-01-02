@@ -252,6 +252,10 @@
 
     // Particle data arrays (for 3D mesh particles)
     const particleData = [];
+    
+    // Image sprites floating among particles
+    const floatingImageSprites = [];
+    const floatingImageData = [];
 
     // Create circular gradient texture for particles (glowing orb effect)
     function createParticleTexture(sharp = false) {
@@ -646,6 +650,59 @@
       createTreeStar();
 
       scene.add(particleGroup);
+    }
+
+    // Create floating image sprites among particles
+    function createFloatingImages() {
+      if (MEDIA_IMAGES.length === 0) return;
+      
+      const spriteCount = isLowEnd ? 15 : 30;  // Fewer on mobile
+      const spriteSize = isLowEnd ? 0.8 : 0.6;
+      
+      for (let i = 0; i < spriteCount; i++) {
+        // Random position within heart shape (same as particles)
+        const t = Math.random();
+        const u = t * Math.PI * 2;
+        const v = (Math.random() - 0.5) * 0.3;
+        
+        const heartX = 16 * Math.pow(Math.sin(u), 3);
+        const heartY = 13 * Math.cos(u) - 5 * Math.cos(2*u) - 2 * Math.cos(3*u) - Math.cos(4*u);
+        
+        const scale = 0.35;
+        const x = heartX * scale + (Math.random() - 0.5) * 1.0;
+        const y = heartY * scale + (Math.random() - 0.5) * 1.0;
+        const z = v * 4 + (Math.random() - 0.5) * 1.5;
+        
+        // Random image from media
+        const randomImage = MEDIA_IMAGES[Math.floor(Math.random() * MEDIA_IMAGES.length)];
+        
+        // Load texture
+        const textureLoader = new THREE.TextureLoader();
+        const texture = textureLoader.load(randomImage);
+        
+        // Create sprite material with image
+        const material = new THREE.SpriteMaterial({
+          map: texture,
+          transparent: true,
+          opacity: 0.7,
+          blending: THREE.NormalBlending
+        });
+        
+        const sprite = new THREE.Sprite(material);
+        sprite.position.set(x, y, z);
+        sprite.scale.set(spriteSize, spriteSize, 1);
+        
+        particleGroup.add(sprite);
+        floatingImageSprites.push(sprite);
+        
+        // Store data for gentle animation
+        floatingImageData.push({
+          homePosition: new THREE.Vector3(x, y, z),
+          rotationSpeed: (Math.random() - 0.5) * 0.002,
+          floatPhase: Math.random() * Math.PI * 2,
+          floatSpeed: 0.3 + Math.random() * 0.3
+        });
+      }
     }
 
     // ========================================
@@ -1628,6 +1685,26 @@
         sd.sprite.scale.setScalar(scale);
       }
     }
+    
+    // Update floating image sprites animation
+    function updateFloatingImages(time) {
+      for (let i = 0; i < floatingImageSprites.length; i++) {
+        const sprite = floatingImageSprites[i];
+        const data = floatingImageData[i];
+        
+        // Gentle floating motion
+        const floatOffset = Math.sin(time * data.floatSpeed + data.floatPhase) * 0.1;
+        sprite.position.y = data.homePosition.y + floatOffset;
+        
+        // Slow rotation
+        sprite.material.rotation += data.rotationSpeed;
+        
+        // Gentle scale pulsing
+        const scale = 1.0 + Math.sin(time * 0.5 + data.floatPhase) * 0.05;
+        const baseSize = isLowEnd ? 0.8 : 0.6;
+        sprite.scale.set(baseSize * scale, baseSize * scale, 1);
+      }
+    }
 
     // ========================================
     // ANIMATION LOOP
@@ -1649,6 +1726,9 @@
 
       // Update 3D depth effect + twinkling
       updateDepthAndTwinkling(time);
+      
+      // Update floating images
+      updateFloatingImages(time);
 
       // Update cloud rotation with momentum
       updateCloudRotation();
@@ -1676,6 +1756,7 @@
       setupScene();
       createStarfield();
       createParticleSystem();
+      createFloatingImages();  // Add floating image sprites
       createImageSprites();
       createPhotoFrame();
       preloadPhotos();
