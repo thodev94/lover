@@ -171,7 +171,7 @@
 
     const CONFIG = {
       // Particle system - heavily optimized for performance
-      particleCount: isLowEnd ? 800 : 2800,  // Much fewer particles on low-end devices
+      particleCount: isLowEnd ? 1200 : 2800,  // Much fewer particles on low-end devices
       treeHeight: 8.0,
       treeMaxRadius: 3.5,
 
@@ -509,12 +509,12 @@
 
       // Point material - optimized for visibility
       const material = new THREE.PointsMaterial({
-        size: isLowEnd ? 0.35 : 0.18,  // Much larger particles on low-end for clarity
+        size: isLowEnd ? 0.28 : 0.18,  // Slightly larger on mobile
         sizeAttenuation: true,
         vertexColors: true,
-        transparent: !isLowEnd,  // Disable transparency on low-end
-        opacity: 1.0,
-        blending: isLowEnd ? THREE.NormalBlending : THREE.AdditiveBlending,
+        transparent: true,  // Enable transparency for glow effect
+        opacity: isLowEnd ? 0.95 : 0.9,  // Higher opacity on mobile
+        blending: THREE.AdditiveBlending,  // Beautiful glow on all devices
         depthWrite: false
       });
 
