@@ -242,9 +242,9 @@
     let currentState = AppState.TREE;
     let isPhotoVisible = false;
     let cloudRotationY = 0;
-              let cloudRotationX = 0;  // Pitch rotation (up/down)
+                let cloudRotationX = 0;  // Pitch rotation (up/down)
     let rotationVelocity = 0;  // For momentum/inertia
-              let rotationVelocityX = 0;  // Vertical rotation velocity
+                let rotationVelocityX = 0;  // Vertical rotation velocity
     let previousHandX = null;
 
     // Three.js objects
@@ -258,9 +258,9 @@
     // Image sprites floating among particles
     const floatingImageSprites = [];
     const floatingImageData = [];
-              let highlightedSprite = null;  // Currently highlighted sprite
-              let highlightStableTime = 0;  // Time when current highlight was set
-              const HIGHLIGHT_STABILITY_DURATION = 800;  // ms - minimum time before switching highlight
+                let highlightedSprite = null;  // Currently highlighted sprite
+                let highlightStableTime = 0;  // Time when current highlight was set
+                const HIGHLIGHT_STABILITY_DURATION = 800;  // ms - minimum time before switching highlight
     
     // Create rounded rectangle texture mask
     function createRoundedMask() {
@@ -404,7 +404,7 @@
     let wasPinching = false;
     let handTrackingEnabled = false;
         let lastPhotoTriggerTime = 0;
-            const PHOTO_TRIGGER_COOLDOWN = 1500; // 1.5 second cooldown between photo triggers
+              const PHOTO_TRIGGER_COOLDOWN = 1500; // 1.5 second cooldown between photo triggers
     let previousPinchAngle = null;  // For photo rotation
     let photoRotationZ = 0;         // Current photo Z rotation
 
@@ -1182,18 +1182,18 @@
       }
     }
 
-              function applyCloudRotation(deltaX, deltaY = 0) {
+                function applyCloudRotation(deltaX, deltaY = 0) {
       if (currentState !== AppState.CLOUD && currentState !== AppState.PHOTO) return;
 
-              // Add horizontal velocity from hand movement (like spinning a globe)
+                // Add horizontal velocity from hand movement (like spinning a globe)
       if (Math.abs(deltaX) > CONFIG.physics.rotationThreshold) {
         rotationVelocity += deltaX * CONFIG.physics.rotationSensitivity * 0.5;
       }
 
-              // Add vertical velocity from hand movement (pitch rotation)
-              if (Math.abs(deltaY) > CONFIG.physics.rotationThreshold) {
-                rotationVelocityX += deltaY * CONFIG.physics.rotationSensitivity * 0.5;
-              }
+                // Add vertical velocity from hand movement (pitch rotation)
+                if (Math.abs(deltaY) > CONFIG.physics.rotationThreshold) {
+                  rotationVelocityX += deltaY * CONFIG.physics.rotationSensitivity * 0.5;
+                }
     }
 
     function updateCloudRotation() {
@@ -1366,72 +1366,72 @@
       showGestureIndicator('Viewing Photo');
     }
 
-        function showPhotoFromSprite(sprite) {
-          if (isPhotoVisible) return;
-          if (!sprite || !sprite.material.map) return;
+          function showPhotoFromSprite(sprite) {
+            if (isPhotoVisible) return;
+            if (!sprite || !sprite.material.map) return;
 
-          currentState = AppState.PHOTO;
-          isPhotoVisible = true;
+            currentState = AppState.PHOTO;
+            isPhotoVisible = true;
 
-          const photoUrl = sprite.material.map.image.src;
-          console.log('Loading photo from sprite:', photoUrl);
+            const photoUrl = sprite.material.map.image.src;
+            console.log('Loading photo from sprite:', photoUrl);
 
-          // Load texture with error handling
-          if (loadedTextures.has(photoUrl)) {
-            const tex = loadedTextures.get(photoUrl);
-            applyTextureCover(tex);
-          } else {
-            textureLoader.load(
-              photoUrl,
-              (tex) => {
-                console.log('Texture loaded:', photoUrl);
-                tex.colorSpace = THREE.SRGBColorSpace;
-                loadedTextures.set(photoUrl, tex);
-                applyTextureCover(tex);
-              },
-              undefined,
-              (err) => {
-                console.error('Failed to load texture:', photoUrl, err);
-              }
-            );
-          }
-
-          // Apply object-fit: cover effect
-          function applyTextureCover(texture) {
-            const photoSize = CONFIG.getMobilePhotoSize();
-            const frameAspect = photoSize.width / photoSize.height;
-            const imageAspect = texture.image.width / texture.image.height;
-
-            if (imageAspect > frameAspect) {
-              // Image wider than frame - fit height, crop width
-              const scale = frameAspect / imageAspect;
-              texture.repeat.set(scale, 1);
-              texture.offset.set((1 - scale) / 2, 0);
+            // Load texture with error handling
+            if (loadedTextures.has(photoUrl)) {
+              const tex = loadedTextures.get(photoUrl);
+              applyTextureCover(tex);
             } else {
-              // Image taller than frame - fit width, crop height
-              const scale = imageAspect / frameAspect;
-              texture.repeat.set(1, scale);
-              texture.offset.set(0, (1 - scale) / 2);
+              textureLoader.load(
+                photoUrl,
+                (tex) => {
+                  console.log('Texture loaded:', photoUrl);
+                  tex.colorSpace = THREE.SRGBColorSpace;
+                  loadedTextures.set(photoUrl, tex);
+                  applyTextureCover(tex);
+                },
+                undefined,
+                (err) => {
+                  console.error('Failed to load texture:', photoUrl, err);
+                }
+              );
             }
 
-            photoMesh.material.map = texture;
-            photoMesh.material.needsUpdate = true;
+            // Apply object-fit: cover effect
+            function applyTextureCover(texture) {
+              const photoSize = CONFIG.getMobilePhotoSize();
+              const frameAspect = photoSize.width / photoSize.height;
+              const imageAspect = texture.image.width / texture.image.height;
+
+              if (imageAspect > frameAspect) {
+                // Image wider than frame - fit height, crop width
+                const scale = frameAspect / imageAspect;
+                texture.repeat.set(scale, 1);
+                texture.offset.set((1 - scale) / 2, 0);
+              } else {
+                // Image taller than frame - fit width, crop height
+                const scale = imageAspect / frameAspect;
+                texture.repeat.set(1, scale);
+                texture.offset.set(0, (1 - scale) / 2);
+              }
+
+              photoMesh.material.map = texture;
+              photoMesh.material.needsUpdate = true;
+            }
+
+            // Position - center of screen, closer to camera for large display
+            photoFrame.position.set(0, 0, 6);
+            photoFrame.rotation.z = 0;
+            photoRotationZ = 0;
+            photoFrame.visible = true;
+
+            // Scatter particles around photo
+            scatterParticlesFromPoint(0, 0, 2, CONFIG.photo.scatterRadius);
+
+            // Scale animation with overshoot
+            animateScale(photoFrame, 0, 1, CONFIG.photo.scaleInDuration, easeOutBack);
+
+            showGestureIndicator('Viewing Photo');
           }
-
-          // Position - center of screen, closer to camera for large display
-          photoFrame.position.set(0, 0, 6);
-          photoFrame.rotation.z = 0;
-          photoRotationZ = 0;
-          photoFrame.visible = true;
-
-          // Scatter particles around photo
-          scatterParticlesFromPoint(0, 0, 2, CONFIG.photo.scatterRadius);
-
-          // Scale animation with overshoot
-          animateScale(photoFrame, 0, 1, CONFIG.photo.scaleInDuration, easeOutBack);
-
-          showGestureIndicator('Viewing Photo');
-        }
 
     function hidePhoto() {
       if (!isPhotoVisible) return;
