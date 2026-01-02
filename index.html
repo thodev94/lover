@@ -255,25 +255,39 @@
 
     // Create circular gradient texture for particles (glowing orb effect)
     function createParticleTexture() {
+      const size = 128;
       const canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 64;
+      canvas.width = size;
+      canvas.height = size;
       const ctx = canvas.getContext('2d');
       
-      const centerX = 32;
-      const centerY = 32;
-      const radius = 32;
+      const center = size / 2;
+      const imageData = ctx.createImageData(size, size);
+      const data = imageData.data;
       
-      // Create radial gradient for glow effect
-      const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-      gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.9)');
-      gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.6)');
-      gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.2)');
-      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      // Draw perfect circle with smooth gradient pixel by pixel
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const dx = x - center;
+          const dy = y - center;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const normalizedDistance = distance / center;
+          
+          // Smooth falloff for glowing effect
+          let alpha = 0;
+          if (normalizedDistance < 1) {
+            alpha = Math.pow(1 - normalizedDistance, 2.5);  // Power curve for smooth glow
+          }
+          
+          const idx = (y * size + x) * 4;
+          data[idx] = 255;        // R
+          data[idx + 1] = 255;    // G
+          data[idx + 2] = 255;    // B
+          data[idx + 3] = alpha * 255;  // A
+        }
+      }
       
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 64, 64);
+      ctx.putImageData(imageData, 0, 0);
       
       const texture = new THREE.CanvasTexture(canvas);
       texture.needsUpdate = true;
