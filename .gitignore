@@ -1,0 +1,6 @@
+demo-images
+node_modules
+playwright*
+screenshots
+test*
+media

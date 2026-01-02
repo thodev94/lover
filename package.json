@@ -1,0 +1,18 @@
+{
+  "name": "holiday-particle-tree",
+  "version": "1.0.0",
+  "description": "Interactive Holiday Particle Tree with hand gesture controls",
+  "scripts": {
+    "manifest": "node scripts/generate-manifest.js",
+    "manifest:watch": "node scripts/generate-manifest.js --watch",
+    "dev": "node scripts/generate-manifest.js --watch & npx serve .",
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --ui",
+    "serve": "npx serve ."
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "playwright": "^1.49.0",
+    "serve": "^14.2.5"
+  }
+}
