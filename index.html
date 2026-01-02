@@ -256,6 +256,25 @@
     // Image sprites floating among particles
     const floatingImageSprites = [];
     const floatingImageData = [];
+    
+    // Create rounded rectangle texture mask
+    function createRoundedMask() {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      
+      const radius = size * 0.15;  // 15% corner radius
+      
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, radius);
+      ctx.fill();
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      return texture;
+    }
 
     // Create circular gradient texture for particles (glowing orb effect)
     function createParticleTexture(sharp = false) {
@@ -658,20 +677,49 @@
       
       const spriteCount = isLowEnd ? 15 : 30;  // Fewer on mobile
       const spriteSize = isLowEnd ? 0.8 : 0.6;
+      const roundedMask = createRoundedMask();
+      const minDistance = spriteSize * 1.5;  // Minimum distance between sprites to avoid overlap
+      const positions = [];  // Store all positions to check for overlaps
       
       for (let i = 0; i < spriteCount; i++) {
-        // Random position within heart shape (same as particles)
-        const t = Math.random();
-        const u = t * Math.PI * 2;
-        const v = (Math.random() - 0.5) * 0.3;
+        let x, y, z;
+        let attempts = 0;
+        let validPosition = false;
         
-        const heartX = 16 * Math.pow(Math.sin(u), 3);
-        const heartY = 13 * Math.cos(u) - 5 * Math.cos(2*u) - 2 * Math.cos(3*u) - Math.cos(4*u);
+        // Try to find a non-overlapping position
+        while (!validPosition && attempts < 50) {
+          // Random position on sphere surface
+          const theta = Math.random() * Math.PI * 2;  // Azimuthal angle (0 to 2π)
+          const phi = Math.acos(2 * Math.random() - 1);  // Polar angle (uniform distribution)
+          
+          const sphereRadius = 4.5;  // Sphere radius
+          x = sphereRadius * Math.sin(phi) * Math.cos(theta);
+          y = sphereRadius * Math.sin(phi) * Math.sin(theta);
+          z = sphereRadius * Math.cos(phi);
+          
+          // Check distance to all existing positions
+          validPosition = true;
+          for (let j = 0; j < positions.length; j++) {
+            const existingPos = positions[j];
+            const dx = x - existingPos.x;
+            const dy = y - existingPos.y;
+            const dz = z - existingPos.z;
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            
+            if (distance < minDistance) {
+              validPosition = false;
+              break;
+            }
+          }
+          
+          attempts++;
+        }
         
-        const scale = 0.35;
-        const x = heartX * scale + (Math.random() - 0.5) * 1.0;
-        const y = heartY * scale + (Math.random() - 0.5) * 1.0;
-        const z = v * 4 + (Math.random() - 0.5) * 1.5;
+        // If couldn't find valid position after 50 attempts, skip this sprite
+        if (!validPosition) continue;
+        
+        // Store this position
+        positions.push({ x, y, z });
         
         // Random image from media
         const randomImage = MEDIA_IMAGES[Math.floor(Math.random() * MEDIA_IMAGES.length)];
@@ -680,17 +728,19 @@
         const textureLoader = new THREE.TextureLoader();
         const texture = textureLoader.load(randomImage);
         
-        // Create sprite material with image
+        // Create sprite material with rounded corners using alphaMap
         const material = new THREE.SpriteMaterial({
           map: texture,
+          alphaMap: roundedMask,  // Rounded corners mask
           transparent: true,
-          opacity: 0.7,
+          opacity: 1.0,  // Full opacity
           blending: THREE.NormalBlending
         });
         
         const sprite = new THREE.Sprite(material);
         sprite.position.set(x, y, z);
         sprite.scale.set(spriteSize, spriteSize, 1);
+        sprite.visible = false;  // Hidden initially, only show when rotating
         
         particleGroup.add(sprite);
         floatingImageSprites.push(sprite);
@@ -1151,16 +1201,93 @@
     // ========================================
     // PHOTO POPUP
     // ========================================
-    function showPhotoAtPosition(x, y, z) {
+    
+    // Find images near screen center (vertical preference from top to bottom)
+    function getClosestImageToCamera(handX = null, handY = null) {
+      if (floatingImageSprites.length === 0) return null;
+      
+      const centerX = 0.5;
+      const centerY = 0.5;
+      const centerTolerance = 0.25;  // 25% tolerance from center
+      const centerSprites = [];
+      
+      for (let i = 0; i < floatingImageSprites.length; i++) {
+        const sprite = floatingImageSprites[i];
+        if (!sprite.visible) continue;
+        
+        // Get sprite position in world space
+        const spriteWorldPos = new THREE.Vector3();
+        sprite.getWorldPosition(spriteWorldPos);
+        
+        // Calculate distance from camera
+        const distanceFromCamera = spriteWorldPos.distanceTo(camera.position);
+        
+        // Project sprite to screen space
+        const spriteScreenPos = spriteWorldPos.clone().project(camera);
+        
+        // Check if sprite is in front of camera
+        if (spriteScreenPos.z > 1) continue;
+        
+        // Convert from NDC (-1 to 1) to screen coordinates (0 to 1)
+        const screenX = (spriteScreenPos.x + 1) / 2;
+        const screenY = (1 - spriteScreenPos.y) / 2;
+        
+        // Calculate distance from screen center
+        const distX = Math.abs(screenX - centerX);
+        const distY = Math.abs(screenY - centerY);
+        
+        // Check if sprite is near center (within tolerance box)
+        if (distX < centerTolerance && distY < centerTolerance) {
+          centerSprites.push({
+            sprite: sprite,
+            screenX: screenX,
+            screenY: screenY,
+            distFromCenter: Math.sqrt(distX * distX + distY * distY),
+            distanceFromCamera: distanceFromCamera
+          });
+        }
+      }
+      
+      if (centerSprites.length === 0) return null;
+      
+      // Sort by distance from camera (closest first), then by Y position, then by center distance
+      centerSprites.sort((a, b) => {
+        const distDiff = a.distanceFromCamera - b.distanceFromCamera;
+        if (Math.abs(distDiff) > 0.5) return distDiff;  // Different distance from camera
+        
+        const yDiff = a.screenY - b.screenY;
+        if (Math.abs(yDiff) > 0.1) return yDiff;  // Different vertical positions
+        
+        return a.distFromCenter - b.distFromCenter;  // Same vertical area, prefer closer to center
+      });
+      
+      // Return first sprite (closest to camera, topmost, and closest to center)
+      // Or randomly pick from top 3 for variety
+      const pickCount = Math.min(3, centerSprites.length);
+      const randomIndex = Math.floor(Math.random() * pickCount);
+      return centerSprites[randomIndex].sprite;
+    }
+    
+    function showPhotoAtPosition(x, y, z, handX = null, handY = null) {
       if (isPhotoVisible) return;
 
       currentState = AppState.PHOTO;
       isPhotoVisible = true;
 
-      // Pick random media image (fallback to PHOTOS if no media)
-      const imageList = MEDIA_IMAGES.length > 0 ? MEDIA_IMAGES : PHOTOS;
-      const photoUrl = imageList[Math.floor(Math.random() * imageList.length)];
-      console.log('Loading photo:', photoUrl);
+      // Find closest visible image sprite to camera and hand position
+      const closestSprite = getClosestImageToCamera(handX, handY);
+      let photoUrl = null;
+      
+      if (closestSprite && closestSprite.material.map) {
+        // Use the image from the closest sprite
+        photoUrl = closestSprite.material.map.image.src;
+        console.log('Loading photo from closest sprite:', photoUrl);
+      } else {
+        // Fallback: pick random media image
+        const imageList = MEDIA_IMAGES.length > 0 ? MEDIA_IMAGES : PHOTOS;
+        photoUrl = imageList[Math.floor(Math.random() * imageList.length)];
+        console.log('Loading random photo (no sprite found):', photoUrl);
+      }
 
       // Load texture with error handling
       if (loadedTextures.has(photoUrl)) {
@@ -1421,7 +1548,8 @@
           const now = performance.now();
           // Only trigger if cooldown has passed
           if (now - lastPhotoTriggerTime > PHOTO_TRIGGER_COOLDOWN) {
-            console.log('Pinch detected - showing photo');
+            console.log('Pinch detected - showing photo from center');
+            // No need to pass hand position, just find center image
             showPhotoAtPosition(0, 0, 0);
             lastPhotoTriggerTime = now;
             previousPinchAngle = null; // Reset angle tracking
@@ -1688,21 +1816,29 @@
     
     // Update floating image sprites animation
     function updateFloatingImages(time) {
+      // Only show images when in cloud/rotation state
+      const shouldShow = currentState === AppState.CLOUD;
+      
       for (let i = 0; i < floatingImageSprites.length; i++) {
         const sprite = floatingImageSprites[i];
         const data = floatingImageData[i];
         
-        // Gentle floating motion
-        const floatOffset = Math.sin(time * data.floatSpeed + data.floatPhase) * 0.1;
-        sprite.position.y = data.homePosition.y + floatOffset;
+        // Show/hide based on state
+        sprite.visible = shouldShow;
         
-        // Slow rotation
-        sprite.material.rotation += data.rotationSpeed;
-        
-        // Gentle scale pulsing
-        const scale = 1.0 + Math.sin(time * 0.5 + data.floatPhase) * 0.05;
-        const baseSize = isLowEnd ? 0.8 : 0.6;
-        sprite.scale.set(baseSize * scale, baseSize * scale, 1);
+        if (shouldShow) {
+          // Gentle floating motion
+          const floatOffset = Math.sin(time * data.floatSpeed + data.floatPhase) * 0.1;
+          sprite.position.y = data.homePosition.y + floatOffset;
+          
+          // Slow rotation
+          sprite.material.rotation += data.rotationSpeed;
+          
+          // Gentle scale pulsing
+          const scale = 1.0 + Math.sin(time * 0.5 + data.floatPhase) * 0.05;
+          const baseSize = isLowEnd ? 0.8 : 0.6;
+          sprite.scale.set(baseSize * scale, baseSize * scale, 1);
+        }
       }
     }
 
