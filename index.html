@@ -1651,25 +1651,40 @@
           transitionToTree();
         }
 
-        // Pinch for photo
+        // Pinch for photo - only trigger when hand is near center of screen
         if (currentState === AppState.CLOUD && pinching && !wasPinching) {
-          const now = performance.now();
-          // Only trigger if cooldown has passed
-          if (now - lastPhotoTriggerTime > PHOTO_TRIGGER_COOLDOWN) {
-            console.log('Pinch detected - showing photo from center');
-            // Use the currently highlighted sprite if available
-            if (highlightedSprite) {
-              const photoUrl = highlightedSprite.material.map.image.src;
-              console.log('Showing highlighted photo:', photoUrl);
-              showPhotoFromSprite(highlightedSprite);
+          // Check if hand is in center region (not at edges)
+          const palmCenter = landmarks[9];
+          const handX = 1 - palmCenter.x;  // Normalized 0-1
+          const handY = palmCenter.y;      // Normalized 0-1
+          
+          // Define center region (40% tolerance from center = 0.5)
+          const centerTolerance = 0.4;
+          const isHandInCenter = 
+            Math.abs(handX - 0.5) < centerTolerance && 
+            Math.abs(handY - 0.5) < centerTolerance;
+          
+          if (isHandInCenter) {
+            const now = performance.now();
+            // Only trigger if cooldown has passed
+            if (now - lastPhotoTriggerTime > PHOTO_TRIGGER_COOLDOWN) {
+              console.log('Pinch detected in center - showing photo');
+              // Use the currently highlighted sprite if available
+              if (highlightedSprite) {
+                const photoUrl = highlightedSprite.material.map.image.src;
+                console.log('Showing highlighted photo:', photoUrl);
+                showPhotoFromSprite(highlightedSprite);
+              } else {
+                // Fallback to finding closest sprite
+                showPhotoAtPosition(0, 0, 0);
+              }
+              lastPhotoTriggerTime = now;
+              previousPinchAngle = null; // Reset angle tracking
             } else {
-              // Fallback to finding closest sprite
-              showPhotoAtPosition(0, 0, 0);
+              console.log('Pinch detected but in cooldown');
             }
-            lastPhotoTriggerTime = now;
-            previousPinchAngle = null; // Reset angle tracking
           } else {
-            console.log('Pinch detected but in cooldown');
+            console.log('Pinch detected but hand not in center region');
           }
         }
 
@@ -1704,7 +1719,56 @@
         mousePosition.y = y * 4;
       });
 
-      canvas.addEventListener('click', () => {
+      // Mouse drag for rotation
+      let isDragging = false;
+      let hasDragged = false;  // Track if actually moved
+      let lastMouseX = 0;
+      let lastMouseY = 0;
+      let dragStartTime = 0;
+
+      canvas.addEventListener('mousedown', (e) => {
+        if (e.button === 0) {
+          isDragging = true;
+          hasDragged = false;
+          lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
+          dragStartTime = performance.now();
+        }
+      });
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (isDragging && (currentState === AppState.CLOUD || currentState === AppState.PHOTO)) {
+          const deltaX = (e.clientX - lastMouseX) / window.innerWidth;
+          const deltaY = (e.clientY - lastMouseY) / window.innerHeight;
+
+          // Mark as dragged if moved more than threshold
+          if (Math.abs(deltaX) > 0.003 || Math.abs(deltaY) > 0.003) {
+            hasDragged = true;
+          }
+          
+          applyCloudRotation(deltaX * 0.5, deltaY * 0.5);
+          lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
+        }
+      });
+
+      canvas.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        isDragging = false;
+        hasDragged = false;
+      });
+
+      canvas.addEventListener('click', (e) => {
+        // Only trigger if not dragged and click was quick
+        const clickDuration = performance.now() - dragStartTime;
+        if (hasDragged || clickDuration > 300) {
+          hasDragged = false;
+          return;
+        }
+
         if (currentState === AppState.TREE) {
           transitionToCloud();
         } else if (currentState === AppState.CLOUD) {
@@ -1716,38 +1780,14 @@
         } else if (currentState === AppState.PHOTO) {
           hidePhoto();
         }
+
+        hasDragged = false;
       });
 
       canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         transitionToTree();
       });
-
-      // Mouse drag for rotation
-      let isDragging = false;
-      let lastMouseX = 0;
-      let lastMouseY = 0;
-
-      canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 0) {
-          isDragging = true;
-          lastMouseX = e.clientX;
-          lastMouseY = e.clientY;
-        }
-      });
-
-      canvas.addEventListener('mousemove', (e) => {
-        if (isDragging && (currentState === AppState.CLOUD || currentState === AppState.PHOTO)) {
-          const deltaX = (e.clientX - lastMouseX) / window.innerWidth;
-          const deltaY = (e.clientY - lastMouseY) / window.innerHeight;
-          applyCloudRotation(deltaX * 0.5, deltaY * 0.5);
-          lastMouseX = e.clientX;
-          lastMouseY = e.clientY;
-        }
-      });
-
-      canvas.addEventListener('mouseup', () => { isDragging = false; });
-      canvas.addEventListener('mouseleave', () => { isDragging = false; });
     }
 
     function initTouchHandler() {
@@ -1755,6 +1795,7 @@
       let touchStartX = 0;
       let touchStartY = 0;
       let touchStartTime = 0;
+      let hasSwiped = false;  // Track if actually moved
 
       canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
@@ -1762,6 +1803,7 @@
         touchStartX = touch.clientX;
         touchStartY = touch.clientY;
         touchStartTime = performance.now();
+        hasSwiped = false;
 
         const rect = canvas.getBoundingClientRect();
         const x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1770,10 +1812,28 @@
         mousePosition.y = y * 4;
       }, { passive: false });
 
+      canvas.addEventListener('touchmove', (e) => {
+        if (currentState === AppState.CLOUD || currentState === AppState.PHOTO) {
+          const touch = e.touches[0];
+          const deltaX = (touch.clientX - touchStartX) / window.innerWidth;
+          const deltaY = (touch.clientY - touchStartY) / window.innerHeight;
+
+          // Mark as swiped if moved more than threshold
+          if (Math.abs(deltaX) > 0.01 || Math.abs(deltaY) > 0.01) {
+            hasSwiped = true;
+          }
+
+          applyCloudRotation(deltaX * 0.3, deltaY * 0.3);
+          touchStartX = touch.clientX;
+          touchStartY = touch.clientY;
+        }
+      }, { passive: true });
+
       canvas.addEventListener('touchend', (e) => {
         const touchDuration = performance.now() - touchStartTime;
 
-        if (touchDuration < 300) { // Tap
+        // Only trigger tap if didn't swipe and duration was short
+        if (!hasSwiped && touchDuration < 300) {
           if (currentState === AppState.TREE) {
             transitionToCloud();
           } else if (currentState === AppState.CLOUD && !isPhotoVisible) {
@@ -1782,17 +1842,8 @@
             hidePhoto();
           }
         }
-      }, { passive: true });
 
-      canvas.addEventListener('touchmove', (e) => {
-        if (currentState === AppState.CLOUD || currentState === AppState.PHOTO) {
-          const touch = e.touches[0];
-          const deltaX = (touch.clientX - touchStartX) / window.innerWidth;
-          const deltaY = (touch.clientY - touchStartY) / window.innerHeight;
-          applyCloudRotation(deltaX * 0.3, deltaY * 0.3);
-          touchStartX = touch.clientX;
-          touchStartY = touch.clientY;
-        }
+        hasSwiped = false;
       }, { passive: true });
     }
 
