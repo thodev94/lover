@@ -242,7 +242,9 @@
     let currentState = AppState.TREE;
     let isPhotoVisible = false;
     let cloudRotationY = 0;
+              let cloudRotationX = 0;  // Pitch rotation (up/down)
     let rotationVelocity = 0;  // For momentum/inertia
+              let rotationVelocityX = 0;  // Vertical rotation velocity
     let previousHandX = null;
 
     // Three.js objects
@@ -256,6 +258,9 @@
     // Image sprites floating among particles
     const floatingImageSprites = [];
     const floatingImageData = [];
+              let highlightedSprite = null;  // Currently highlighted sprite
+              let highlightStableTime = 0;  // Time when current highlight was set
+              const HIGHLIGHT_STABILITY_DURATION = 800;  // ms - minimum time before switching highlight
     
     // Create rounded rectangle texture mask
     function createRoundedMask() {
@@ -399,7 +404,7 @@
     let wasPinching = false;
     let handTrackingEnabled = false;
         let lastPhotoTriggerTime = 0;
-        const PHOTO_TRIGGER_COOLDOWN = 1000; // 1 second cooldown between photo triggers
+            const PHOTO_TRIGGER_COOLDOWN = 1500; // 1.5 second cooldown between photo triggers
     let previousPinchAngle = null;  // For photo rotation
     let photoRotationZ = 0;         // Current photo Z rotation
 
@@ -446,9 +451,9 @@
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x000000);
 
-      // Camera
+      // Camera - wider FOV for more comfortable hand tracking space
       camera = new THREE.PerspectiveCamera(
-        75,
+        85,
         window.innerWidth / window.innerHeight,
         0.1,
         1000
@@ -1170,23 +1175,31 @@
         applyImplosion();
         currentState = AppState.TREE;
         cloudRotationY = 0;
+        cloudRotationX = 0;
         particleGroup.rotation.y = 0;
+        particleGroup.rotation.x = 0;
         showGestureIndicator('Tree Mode');
       }
     }
 
-    function applyCloudRotation(deltaX) {
+              function applyCloudRotation(deltaX, deltaY = 0) {
       if (currentState !== AppState.CLOUD && currentState !== AppState.PHOTO) return;
 
-      // Add velocity from hand movement (like spinning a globe)
+              // Add horizontal velocity from hand movement (like spinning a globe)
       if (Math.abs(deltaX) > CONFIG.physics.rotationThreshold) {
         rotationVelocity += deltaX * CONFIG.physics.rotationSensitivity * 0.5;
       }
+
+              // Add vertical velocity from hand movement (pitch rotation)
+              if (Math.abs(deltaY) > CONFIG.physics.rotationThreshold) {
+                rotationVelocityX += deltaY * CONFIG.physics.rotationSensitivity * 0.5;
+              }
     }
 
     function updateCloudRotation() {
       if (currentState === AppState.TREE) {
         rotationVelocity = 0;
+        rotationVelocityX = 0;
         return;
       }
 
@@ -1194,8 +1207,15 @@
       cloudRotationY += rotationVelocity;
       rotationVelocity *= CONFIG.physics.rotationMomentum;
 
+      cloudRotationX += rotationVelocityX;
+      rotationVelocityX *= CONFIG.physics.rotationMomentum;
+
+      // Limit vertical rotation to prevent flipping upside down
+      cloudRotationX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, cloudRotationX));
+
       // Apply rotation
       particleGroup.rotation.y = cloudRotationY;
+      particleGroup.rotation.x = cloudRotationX;
     }
 
     // ========================================
@@ -1346,6 +1366,73 @@
       showGestureIndicator('Viewing Photo');
     }
 
+        function showPhotoFromSprite(sprite) {
+          if (isPhotoVisible) return;
+          if (!sprite || !sprite.material.map) return;
+
+          currentState = AppState.PHOTO;
+          isPhotoVisible = true;
+
+          const photoUrl = sprite.material.map.image.src;
+          console.log('Loading photo from sprite:', photoUrl);
+
+          // Load texture with error handling
+          if (loadedTextures.has(photoUrl)) {
+            const tex = loadedTextures.get(photoUrl);
+            applyTextureCover(tex);
+          } else {
+            textureLoader.load(
+              photoUrl,
+              (tex) => {
+                console.log('Texture loaded:', photoUrl);
+                tex.colorSpace = THREE.SRGBColorSpace;
+                loadedTextures.set(photoUrl, tex);
+                applyTextureCover(tex);
+              },
+              undefined,
+              (err) => {
+                console.error('Failed to load texture:', photoUrl, err);
+              }
+            );
+          }
+
+          // Apply object-fit: cover effect
+          function applyTextureCover(texture) {
+            const photoSize = CONFIG.getMobilePhotoSize();
+            const frameAspect = photoSize.width / photoSize.height;
+            const imageAspect = texture.image.width / texture.image.height;
+
+            if (imageAspect > frameAspect) {
+              // Image wider than frame - fit height, crop width
+              const scale = frameAspect / imageAspect;
+              texture.repeat.set(scale, 1);
+              texture.offset.set((1 - scale) / 2, 0);
+            } else {
+              // Image taller than frame - fit width, crop height
+              const scale = imageAspect / frameAspect;
+              texture.repeat.set(1, scale);
+              texture.offset.set(0, (1 - scale) / 2);
+            }
+
+            photoMesh.material.map = texture;
+            photoMesh.material.needsUpdate = true;
+          }
+
+          // Position - center of screen, closer to camera for large display
+          photoFrame.position.set(0, 0, 6);
+          photoFrame.rotation.z = 0;
+          photoRotationZ = 0;
+          photoFrame.visible = true;
+
+          // Scatter particles around photo
+          scatterParticlesFromPoint(0, 0, 2, CONFIG.photo.scatterRadius);
+
+          // Scale animation with overshoot
+          animateScale(photoFrame, 0, 1, CONFIG.photo.scaleInDuration, easeOutBack);
+
+          showGestureIndicator('Viewing Photo');
+        }
+
     function hidePhoto() {
       if (!isPhotoVisible) return;
 
@@ -1454,8 +1541,8 @@
         Math.pow(thumb.x - index.x, 2) +
         Math.pow(thumb.y - index.y, 2)
       );
-      // Increased threshold for more deliberate pinch (was 0.06)
-      return distance < 0.05;
+      // Increased threshold for more stable pinch detection
+      return distance < 0.06;
     }
 
     // Get wrist rotation angle for photo rotation
@@ -1499,14 +1586,23 @@
     function trackHandMovement(landmarks) {
       const palmCenter = landmarks[9];
       const currentX = 1 - palmCenter.x;
+      const currentY = palmCenter.y;  // Y coordinate for vertical movement
 
       let deltaX = 0;
+      let deltaY = 0;
+      
       if (previousHandX !== null) {
         deltaX = currentX - previousHandX;
       }
-      previousHandX = currentX;
 
-      return deltaX;
+      if (window.previousHandY !== undefined) {
+        deltaY = currentY - window.previousHandY;
+      }
+
+      previousHandX = currentX;
+      window.previousHandY = currentY;
+
+      return { deltaX, deltaY };
     }
 
     let lastProcessTime = 0;
@@ -1527,19 +1623,22 @@
         const openHand = detectOpenHand(landmarks);
         const pinching = detectPinch(landmarks);
         const fist = detectFist(landmarks);
-        const deltaX = trackHandMovement(landmarks);
+        const movement = trackHandMovement(landmarks);
 
-        // Cloud rotation
-        if (currentState === AppState.CLOUD) {
-          applyCloudRotation(deltaX);
+        // Cloud rotation - only when not pinching
+        if (currentState === AppState.CLOUD && !pinching && !wasPinching && !isPhotoVisible) {
+          applyCloudRotation(movement.deltaX, movement.deltaY);
         }
 
-        // State transitions
-        if (currentState === AppState.TREE && openHand) {
+        // Check if hand is moving significantly for gesture detection
+        const isHandMoving = Math.abs(movement.deltaX) > 0.05 || Math.abs(movement.deltaY) > 0.05;
+
+        // State transitions - only when hand is relatively still
+        if (currentState === AppState.TREE && openHand && !isHandMoving) {
           transitionToCloud();
         }
 
-        if (currentState === AppState.CLOUD && fist) {
+        if (currentState === AppState.CLOUD && fist && !isHandMoving) {
           transitionToTree();
         }
 
@@ -1549,8 +1648,15 @@
           // Only trigger if cooldown has passed
           if (now - lastPhotoTriggerTime > PHOTO_TRIGGER_COOLDOWN) {
             console.log('Pinch detected - showing photo from center');
-            // No need to pass hand position, just find center image
-            showPhotoAtPosition(0, 0, 0);
+            // Use the currently highlighted sprite if available
+            if (highlightedSprite) {
+              const photoUrl = highlightedSprite.material.map.image.src;
+              console.log('Showing highlighted photo:', photoUrl);
+              showPhotoFromSprite(highlightedSprite);
+            } else {
+              // Fallback to finding closest sprite
+              showPhotoAtPosition(0, 0, 0);
+            }
             lastPhotoTriggerTime = now;
             previousPinchAngle = null; // Reset angle tracking
           } else {
@@ -1611,19 +1717,23 @@
       // Mouse drag for rotation
       let isDragging = false;
       let lastMouseX = 0;
+      let lastMouseY = 0;
 
       canvas.addEventListener('mousedown', (e) => {
         if (e.button === 0) {
           isDragging = true;
           lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
         }
       });
 
       canvas.addEventListener('mousemove', (e) => {
         if (isDragging && (currentState === AppState.CLOUD || currentState === AppState.PHOTO)) {
           const deltaX = (e.clientX - lastMouseX) / window.innerWidth;
-          applyCloudRotation(deltaX * 0.5);
+          const deltaY = (e.clientY - lastMouseY) / window.innerHeight;
+          applyCloudRotation(deltaX * 0.5, deltaY * 0.5);
           lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
         }
       });
 
@@ -1634,12 +1744,14 @@
     function initTouchHandler() {
       const canvas = renderer.domElement;
       let touchStartX = 0;
+      let touchStartY = 0;
       let touchStartTime = 0;
 
       canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
         const touch = e.touches[0];
         touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
         touchStartTime = performance.now();
 
         const rect = canvas.getBoundingClientRect();
@@ -1667,8 +1779,10 @@
         if (currentState === AppState.CLOUD || currentState === AppState.PHOTO) {
           const touch = e.touches[0];
           const deltaX = (touch.clientX - touchStartX) / window.innerWidth;
-          applyCloudRotation(deltaX * 0.3);
+          const deltaY = (touch.clientY - touchStartY) / window.innerHeight;
+          applyCloudRotation(deltaX * 0.3, deltaY * 0.3);
           touchStartX = touch.clientX;
+          touchStartY = touch.clientY;
         }
       }, { passive: true });
     }
@@ -1819,6 +1933,29 @@
       // Only show images when in cloud/rotation state
       const shouldShow = currentState === AppState.CLOUD;
       
+      // Find sprite to highlight (closest to center)
+      // Don't update highlight when pinching to prevent switching during photo trigger
+      let spriteToHighlight = null;
+      if (shouldShow && !isPhotoVisible && !wasPinching) {
+        spriteToHighlight = getClosestImageToCamera();
+
+        // Stabilize highlight - only change if enough time has passed or it's a new sprite
+        const now = performance.now();
+        if (spriteToHighlight !== highlightedSprite) {
+          if (now - highlightStableTime > HIGHLIGHT_STABILITY_DURATION) {
+            // Enough time has passed, allow change
+            highlightedSprite = spriteToHighlight;
+            highlightStableTime = now;
+          } else {
+            // Keep current highlight for stability
+            spriteToHighlight = highlightedSprite;
+          }
+        }
+      } else if (wasPinching) {
+        // When pinching, keep the current highlight locked
+        spriteToHighlight = highlightedSprite;
+      }
+      
       for (let i = 0; i < floatingImageSprites.length; i++) {
         const sprite = floatingImageSprites[i];
         const data = floatingImageData[i];
@@ -1834,10 +1971,23 @@
           // Slow rotation
           sprite.material.rotation += data.rotationSpeed;
           
-          // Gentle scale pulsing
-          const scale = 1.0 + Math.sin(time * 0.5 + data.floatPhase) * 0.05;
-          const baseSize = isLowEnd ? 0.8 : 0.6;
-          sprite.scale.set(baseSize * scale, baseSize * scale, 1);
+          // Highlight effect for the sprite that will be selected
+          const isHighlighted = sprite === spriteToHighlight;
+          let baseSize = isLowEnd ? 0.8 : 0.6;
+
+          if (isHighlighted) {
+            // Scale up and pulse
+            const highlightScale = 1.15 + Math.sin(time * 3) * 0.08;
+            sprite.scale.set(baseSize * highlightScale, baseSize * highlightScale, 1);
+            // Increase opacity for highlighted sprite
+            sprite.material.opacity = 1.0;
+          } else {
+            // Normal scale with gentle pulsing
+            const scale = 1.0 + Math.sin(time * 0.5 + data.floatPhase) * 0.05;
+            sprite.scale.set(baseSize * scale, baseSize * scale, 1);
+            // Slightly dimmed when not highlighted
+            sprite.material.opacity = 0.7;
+          }
         }
       }
     }
