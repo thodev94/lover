@@ -577,20 +577,20 @@
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-      // Create particle texture - sharp for mobile, soft for desktop
-      const particleTexture = createParticleTexture(isLowEnd);
+      // Create particle texture only for desktop
+      const particleTexture = !isLowEnd ? createParticleTexture(false) : null;
 
-      // Point material - sharp solid particles on mobile, glowing on desktop
+      // Point material - solid squares on mobile for maximum clarity, glowing circles on desktop
       const material = new THREE.PointsMaterial({
-        size: isLowEnd ? 0.45 : 0.22,  // Larger for clearer visibility on mobile
+        size: isLowEnd ? 0.25 : 0.22,  // Clear visibility
         sizeAttenuation: true,
         vertexColors: true,
-        transparent: isLowEnd ? false : true,  // No transparency on mobile for clarity
+        transparent: false,  // No transparency for sharpness
         opacity: 1.0,
-        blending: isLowEnd ? THREE.NormalBlending : THREE.AdditiveBlending,  // Normal blending for sharp edges on mobile
+        blending: THREE.NormalBlending,  // No additive blending on mobile
         depthWrite: false,
-        map: particleTexture,
-        alphaTest: 0.01
+        map: particleTexture,  // No texture on mobile = solid squares
+        alphaTest: isLowEnd ? 0 : 0.01
       });
 
       particles = new THREE.Points(geometry, material);
