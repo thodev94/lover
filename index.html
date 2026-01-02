@@ -258,6 +258,8 @@
     let videoElement = null;
     let wasPinching = false;
     let handTrackingEnabled = false;
+    let lastPhotoTriggerTime = 0;
+    const PHOTO_TRIGGER_COOLDOWN = 1000; // 1 second cooldown between photo triggers
     let previousPinchAngle = null;  // For photo rotation
     let photoRotationZ = 0;         // Current photo Z rotation
 
@@ -1132,7 +1134,8 @@
         Math.pow(thumb.x - index.x, 2) +
         Math.pow(thumb.y - index.y, 2)
       );
-      return distance < 0.06;
+      // Increased threshold for more deliberate pinch (was 0.06)
+      return distance < 0.05;
     }
 
     // Get wrist rotation angle for photo rotation
@@ -1222,8 +1225,16 @@
 
         // Pinch for photo
         if (currentState === AppState.CLOUD && pinching && !wasPinching) {
-          showPhotoAtPosition(0, 0, 0);
-          previousPinchAngle = null; // Reset angle tracking
+          const now = performance.now();
+          // Only trigger if cooldown has passed
+          if (now - lastPhotoTriggerTime > PHOTO_TRIGGER_COOLDOWN) {
+            console.log('Pinch detected - showing photo');
+            showPhotoAtPosition(0, 0, 0);
+            lastPhotoTriggerTime = now;
+            previousPinchAngle = null; // Reset angle tracking
+          } else {
+            console.log('Pinch detected but in cooldown');
+          }
         }
 
         // Photo rotation while pinching
