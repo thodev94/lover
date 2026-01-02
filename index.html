@@ -265,8 +265,12 @@
       const imageData = ctx.createImageData(size, size);
       const data = imageData.data;
       
+      // Offset highlight to create 3D sphere effect
+      const highlightOffsetX = size * 0.15;  // Highlight offset from center
+      const highlightOffsetY = size * 0.15;
+      
       if (sharp) {
-        // Bright glowing orb for mobile with shine effect
+        // Bright glowing orb for mobile with offset highlight
         for (let y = 0; y < size; y++) {
           for (let x = 0; x < size; x++) {
             const dx = x - center;
@@ -274,25 +278,34 @@
             const distance = Math.sqrt(dx * dx + dy * dy);
             const normalizedDistance = distance / center;
             
+            // Distance from highlight point
+            const highlightX = center + highlightOffsetX;
+            const highlightY = center + highlightOffsetY;
+            const hdx = x - highlightX;
+            const hdy = y - highlightY;
+            const highlightDist = Math.sqrt(hdx * hdx + hdy * hdy);
+            const normalizedHighlightDist = highlightDist / (center * 0.6);
+            
             let brightness = 0;
             let alpha = 0;
             
             if (normalizedDistance < 1) {
-              // Bright center with gradient
-              if (normalizedDistance < 0.3) {
-                // Super bright core
-                brightness = 1.0;
-                alpha = 1.0;
-              } else if (normalizedDistance < 0.7) {
-                // Bright mid section
-                const t = (normalizedDistance - 0.3) / 0.4;
-                brightness = 1.0 - (t * 0.3);  // 1.0 to 0.7
+              // Base brightness from center
+              let baseBrightness = 1.0 - (normalizedDistance * 0.5);
+              
+              // Add highlight
+              let highlightBrightness = 0;
+              if (normalizedHighlightDist < 1) {
+                highlightBrightness = (1 - normalizedHighlightDist) * 0.8;
+              }
+              
+              brightness = Math.min(1.0, baseBrightness + highlightBrightness);
+              
+              // Alpha fade at edges
+              if (normalizedDistance < 0.8) {
                 alpha = 1.0;
               } else {
-                // Fade edge
-                const t = (normalizedDistance - 0.7) / 0.3;
-                brightness = 0.7 - (t * 0.5);  // 0.7 to 0.2
-                alpha = 1.0 - (t * 0.7);  // Fade alpha
+                alpha = (1 - normalizedDistance) / 0.2;
               }
             }
             
@@ -304,7 +317,7 @@
           }
         }
       } else {
-        // Soft glow for desktop
+        // Soft glow for desktop with highlight
         for (let y = 0; y < size; y++) {
           for (let x = 0; x < size; x++) {
             const dx = x - center;
@@ -312,18 +325,35 @@
             const distance = Math.sqrt(dx * dx + dy * dy);
             const normalizedDistance = distance / center;
             
+            // Distance from highlight point
+            const highlightX = center + highlightOffsetX;
+            const highlightY = center + highlightOffsetY;
+            const hdx = x - highlightX;
+            const hdy = y - highlightY;
+            const highlightDist = Math.sqrt(hdx * hdx + hdy * hdy);
+            const normalizedHighlightDist = highlightDist / (center * 0.5);
+            
+            let brightness = 0;
             let alpha = 0;
-            if (normalizedDistance < 0.5) {
-              alpha = 1.0;
-            } else if (normalizedDistance < 1) {
-              const edgeFade = (1 - normalizedDistance) / 0.5;
-              alpha = Math.pow(edgeFade, 1.5);
+            
+            if (normalizedDistance < 1) {
+              // Base brightness
+              let baseBrightness = 1.0 - (normalizedDistance * 0.6);
+              
+              // Highlight
+              let highlightBrightness = 0;
+              if (normalizedHighlightDist < 1) {
+                highlightBrightness = Math.pow(1 - normalizedHighlightDist, 2) * 0.6;
+              }
+              
+              brightness = Math.min(1.0, baseBrightness + highlightBrightness);
+              alpha = Math.pow(1 - normalizedDistance, 1.5);
             }
             
             const idx = (y * size + x) * 4;
-            data[idx] = 255;
-            data[idx + 1] = 255;
-            data[idx + 2] = 255;
+            data[idx] = 255 * brightness;
+            data[idx + 1] = 255 * brightness;
+            data[idx + 2] = 255 * brightness;
             data[idx + 3] = alpha * 255;
           }
         }
@@ -352,6 +382,9 @@
 
     // Mouse/Touch
     let mousePosition = { x: 0, y: 0 };
+
+    // Lighting direction for particle shine (changes with rotation)
+    let lightDirection = new THREE.Vector3(1, 1, 0.5).normalize();
 
     // Sample photos (will use placeholder if no photos exist)
     const PHOTOS = [
