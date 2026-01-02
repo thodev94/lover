@@ -170,8 +170,8 @@
     const isLowEnd = isMobile || navigator.hardwareConcurrency <= 4;
 
     const CONFIG = {
-      // Particle system - optimized for performance
-      particleCount: isLowEnd ? 1400 : 2800,  // Half particles on low-end devices
+      // Particle system - heavily optimized for performance
+      particleCount: isLowEnd ? 800 : 2800,  // Much fewer particles on low-end devices
       treeHeight: 8.0,
       treeMaxRadius: 3.5,
 
@@ -184,14 +184,14 @@
       },
       colorDistribution: { gold: 0.45, red: 0.25, white: 0.15, cosmic: 0.15 },
 
-      // Physics
+      // Physics - simplified on low-end
       physics: {
-        explosionForce: 0.28,      // Good spread for large cloud
-        springStiffness: 0.045,
-        damping: 0.965,
-        ambientDrift: 0.0002,
+        explosionForce: 0.28,
+        springStiffness: isLowEnd ? 0.06 : 0.045,  // Faster convergence
+        damping: isLowEnd ? 0.95 : 0.965,  // Faster settling
+        ambientDrift: isLowEnd ? 0 : 0.0002,  // Disable drift on low-end
         cloudWeakSpring: 0.0,
-        cloudRadius: 8.0,          // Large volumetric sphere
+        cloudRadius: 8.0,
         rotationSensitivity: 1.0,
         rotationThreshold: 0.01,
         rotationMomentum: 0.96
@@ -325,35 +325,39 @@
       renderer.setPixelRatio(isLowEnd ? 1 : Math.min(window.devicePixelRatio, 1.5));
       document.body.appendChild(renderer.domElement);
 
-      // Post-processing
+      // Post-processing - minimal on low-end
       composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
 
-      const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        CONFIG.bloom.strength,
-        CONFIG.bloom.radius,
-        CONFIG.bloom.threshold
-      );
-      composer.addPass(bloomPass);
+      if (!isLowEnd) {
+        // Only add bloom on high-end devices
+        const bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(window.innerWidth, window.innerHeight),
+          CONFIG.bloom.strength,
+          CONFIG.bloom.radius,
+          CONFIG.bloom.threshold
+        );
+        composer.addPass(bloomPass);
+      }
       composer.addPass(new OutputPass());
 
-      // Lighting for 3D particles
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      // Lighting - simplified on low-end
+      const ambientLight = new THREE.AmbientLight(0xffffff, isLowEnd ? 0.8 : 0.6);
       scene.add(ambientLight);
 
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-      directionalLight.position.set(5, 10, 7);
-      scene.add(directionalLight);
+      if (!isLowEnd) {
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7);
+        scene.add(directionalLight);
 
-      const backLight = new THREE.DirectionalLight(0xffd700, 0.3);
-      backLight.position.set(-5, -5, -5);
-      scene.add(backLight);
+        const backLight = new THREE.DirectionalLight(0xffd700, 0.3);
+        backLight.position.set(-5, -5, -5);
+        scene.add(backLight);
 
-      // Point light for warm glow
-      const pointLight = new THREE.PointLight(0xffa500, 0.5, 15);
-      pointLight.position.set(0, 0, 3);
-      scene.add(pointLight);
+        const pointLight = new THREE.PointLight(0xffa500, 0.5, 15);
+        pointLight.position.set(0, 0, 3);
+        scene.add(pointLight);
+      }
 
       // Resize handler
       window.addEventListener('resize', onWindowResize);
@@ -503,14 +507,14 @@
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-      // Point material with cosmic star appearance
+      // Point material - optimized for visibility
       const material = new THREE.PointsMaterial({
-        size: isLowEnd ? 0.25 : 0.18,  // Larger particles on low-end for visibility
+        size: isLowEnd ? 0.35 : 0.18,  // Much larger particles on low-end for clarity
         sizeAttenuation: true,
         vertexColors: true,
-        transparent: true,
-        opacity: isLowEnd ? 1.0 : 0.9,
-        blending: THREE.AdditiveBlending,
+        transparent: !isLowEnd,  // Disable transparency on low-end
+        opacity: 1.0,
+        blending: isLowEnd ? THREE.NormalBlending : THREE.AdditiveBlending,
         depthWrite: false
       });
 
@@ -810,8 +814,12 @@
 
     function updateParticlePhysics() {
       const positions = particles.geometry.attributes.position.array;
+      
+      // On low-end devices, only update subset of particles each frame
+      const step = isLowEnd ? 3 : 1;
+      const frameOffset = isLowEnd ? (performance.now() % 3) : 0;
 
-      for (let i = 0; i < particleData.length; i++) {
+      for (let i = frameOffset; i < particleData.length; i += step) {
         const i3 = i * 3;
         const p = particleData[i];
         const home = p.homePosition;
