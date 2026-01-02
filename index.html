@@ -171,7 +171,7 @@
 
     const CONFIG = {
       // Particle system - heavily optimized for performance
-      particleCount: isLowEnd ? 600 : 2800,  // Much fewer particles on low-end devices
+      particleCount: isLowEnd ? 800 : 2800,  // Much fewer particles on low-end devices
       treeHeight: 8.0,
       treeMaxRadius: 3.5,
 
@@ -509,7 +509,7 @@
 
       // Point material - optimized for visibility
       const material = new THREE.PointsMaterial({
-        size: isLowEnd ? 0.6 : 0.18,  // Much larger particles on low-end for clarity
+        size: isLowEnd ? 0.35 : 0.18,  // Much larger particles on low-end for clarity
         sizeAttenuation: true,
         vertexColors: true,
         transparent: !isLowEnd,  // Disable transparency on low-end
