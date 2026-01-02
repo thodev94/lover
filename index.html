@@ -29,6 +29,29 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
 
+    /* Hide webcam on mobile */
+    @media (max-width: 768px) {
+      #webcam-preview {
+        display: none !important;
+      }
+    }
+
+    /* Mobile optimizations */
+    @media (max-width: 768px) {
+      #instructions {
+        font-size: 10px;
+        max-width: 200px;
+        bottom: 10px;
+        left: 10px;
+      }
+      
+      #gesture-indicator {
+        font-size: 12px;
+        padding: 6px 12px;
+        top: 10px;
+      }
+    }
+
     /* Loading overlay */
     #loading-overlay {
       position: fixed;
@@ -188,6 +211,23 @@
         scaleInDuration: 500,
         scaleOutDuration: 300,
         scatterRadius: 4.0
+      },
+
+      // Mobile photo size (smaller for mobile screens)
+      getMobilePhotoSize() {
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile) {
+          return {
+            width: 4.5,
+            height: 3.4,
+            frameThickness: 0.15
+          };
+        }
+        return {
+          width: this.photo.width,
+          height: this.photo.height,
+          frameThickness: this.photo.frameThickness
+        };
       }
     };
 
@@ -578,10 +618,13 @@
     function createPhotoFrame() {
       photoFrame = new THREE.Group();
 
+      // Get responsive photo size
+      const photoSize = CONFIG.getMobilePhotoSize();
+
       // Photo plane
       const photoGeometry = new THREE.PlaneGeometry(
-        CONFIG.photo.width,
-        CONFIG.photo.height
+        photoSize.width,
+        photoSize.height
       );
       const photoMaterial = new THREE.MeshBasicMaterial({
         color: 0xffffff,
@@ -592,8 +635,8 @@
       photoFrame.add(photoMesh);
 
       // Golden frame (from video: polished gold, ~25-35px border)
-      const frameWidth = CONFIG.photo.width + CONFIG.photo.frameThickness * 2;
-      const frameHeight = CONFIG.photo.height + CONFIG.photo.frameThickness * 2;
+      const frameWidth = photoSize.width + photoSize.frameThickness * 2;
+      const frameHeight = photoSize.height + photoSize.frameThickness * 2;
 
       const frameMaterial = new THREE.MeshStandardMaterial({
         color: 0xD4AF37,
@@ -608,34 +651,34 @@
 
       // Top border
       const topBorder = new THREE.Mesh(
-        borderGeo(frameWidth, CONFIG.photo.frameThickness, 0.08),
+        borderGeo(frameWidth, photoSize.frameThickness, 0.08),
         frameMaterial
       );
-      topBorder.position.y = CONFIG.photo.height / 2 + CONFIG.photo.frameThickness / 2;
+      topBorder.position.y = photoSize.height / 2 + photoSize.frameThickness / 2;
       photoFrame.add(topBorder);
 
       // Bottom border
       const bottomBorder = new THREE.Mesh(
-        borderGeo(frameWidth, CONFIG.photo.frameThickness, 0.08),
+        borderGeo(frameWidth, photoSize.frameThickness, 0.08),
         frameMaterial
       );
-      bottomBorder.position.y = -CONFIG.photo.height / 2 - CONFIG.photo.frameThickness / 2;
+      bottomBorder.position.y = -photoSize.height / 2 - photoSize.frameThickness / 2;
       photoFrame.add(bottomBorder);
 
       // Left border
       const leftBorder = new THREE.Mesh(
-        borderGeo(CONFIG.photo.frameThickness, CONFIG.photo.height, 0.08),
+        borderGeo(photoSize.frameThickness, photoSize.height, 0.08),
         frameMaterial
       );
-      leftBorder.position.x = -CONFIG.photo.width / 2 - CONFIG.photo.frameThickness / 2;
+      leftBorder.position.x = -photoSize.width / 2 - photoSize.frameThickness / 2;
       photoFrame.add(leftBorder);
 
       // Right border
       const rightBorder = new THREE.Mesh(
-        borderGeo(CONFIG.photo.frameThickness, CONFIG.photo.height, 0.08),
+        borderGeo(photoSize.frameThickness, photoSize.height, 0.08),
         frameMaterial
       );
-      rightBorder.position.x = CONFIG.photo.width / 2 + CONFIG.photo.frameThickness / 2;
+      rightBorder.position.x = photoSize.width / 2 + photoSize.frameThickness / 2;
       photoFrame.add(rightBorder);
 
       // Initial state
@@ -946,7 +989,8 @@
 
       // Apply object-fit: cover effect
       function applyTextureCover(texture) {
-        const frameAspect = CONFIG.photo.width / CONFIG.photo.height;
+        const photoSize = CONFIG.getMobilePhotoSize();
+        const frameAspect = photoSize.width / photoSize.height;
         const imageAspect = texture.image.width / texture.image.height;
 
         if (imageAspect > frameAspect) {
