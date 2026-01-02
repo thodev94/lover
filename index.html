@@ -165,9 +165,9 @@
     // ========================================
     // CONFIGURATION
     // ========================================
-      // Detect device capabilities
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
-      const isLowEnd = isMobile || navigator.hardwareConcurrency <= 4;
+        // Detect device capabilities
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+        const isLowEnd = isMobile || navigator.hardwareConcurrency <= 4;
 
     const CONFIG = {
       // Particle system - heavily optimized for performance
@@ -262,8 +262,8 @@
     let videoElement = null;
     let wasPinching = false;
     let handTrackingEnabled = false;
-      let lastPhotoTriggerTime = 0;
-      const PHOTO_TRIGGER_COOLDOWN = 1000; // 1 second cooldown between photo triggers
+        let lastPhotoTriggerTime = 0;
+        const PHOTO_TRIGGER_COOLDOWN = 1000; // 1 second cooldown between photo triggers
     let previousPinchAngle = null;  // For photo rotation
     let photoRotationZ = 0;         // Current photo Z rotation
 
@@ -1205,7 +1205,7 @@
     }
 
     let lastProcessTime = 0;
-      const PROCESS_INTERVAL = isLowEnd ? 66 : 33; // 15fps on low-end, 30fps on high-end
+        const PROCESS_INTERVAL = isLowEnd ? 66 : 33; // 15fps on low-end, 30fps on high-end
 
     function processHandFrame() {
       if (!handLandmarker || !videoElement) return;
